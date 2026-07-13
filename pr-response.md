@@ -1,7 +1,7 @@
 # PR Response Doc - CineLog Watchlist Feature
 
 ## AI Usage
-<!-- Fill in at the end - how you used AI tools during this project -->
+I used Codex for codebase orientation and verification planning. Before changing code, I had it summarize the responsibilities and patterns in `models.py`, `services/collection_service.py`, and `tests/test_collection.py`, then I verified those summaries directly against the files. I also used Codex to stress-test my Comment 4 and Comment 5 reasoning; the useful counterarguments were that private-by-default better protects user expectations and date-added order better reflects recent intent, so I acknowledged both tradeoffs explicitly. At the end, I used Codex to check the commit history against the conventional commit requirement.
 
 ## Comment 1 - Rename
 **What I did:** Renamed `save_to_watchlist()` to `add_to_watchlist()` in `services/watchlist_service.py` so the watchlist service matches the existing `add_to_collection()` verb-to-noun convention. Updated the import and call site in `routes/watchlist/watchlist.py`.
@@ -33,11 +33,29 @@
 **Engagement with reviewer's point:** The reviewer's date-added suggestion is valid because recency captures intent: the most recently saved films may be the ones a user is most excited to watch next. I would choose alphabetical for now because the current API exposes one default order and no separate "recently added" view. If usage shows that users treat the watchlist as a queue rather than a lookup list, I would change this to `date_added.desc()` or add an explicit `sort=` query parameter so both behaviors are available.
 
 ## Comment 6 - Rebase
-**What conflicted:**
+**What conflicted:** I ran `git fetch origin` and `git rebase origin/main`. The rebase stopped on an add/add conflict in `.gitignore` because both the branch and `main` had ignore-file changes. The main review conflict was the film ID refactor: the original watchlist branch was written around integer `film_id` values, while `main` had migrated `Film.id` and `CollectionEntry.film_id` to UUID strings.
 
-**How I resolved it:**
+**How I resolved it:** I resolved `.gitignore` by keeping the combined generated-file ignores, including `.pytest_cache/`, `.venv/`, and `venv/`. Then I restored `WatchlistEntry` in `models.py` with `film_id = db.Column(db.String(36), db.ForeignKey("film.id"), nullable=False)` so watchlist entries now reference UUID film IDs. I added `watchlist_entries` relationships for `User` and `Film`, kept `public=True`, and added a unique constraint on `(user_id, film_id)`. I also updated the watchlist service and route docstrings from integer film IDs to UUID film IDs.
 
-**How I verified no conflict remains:**
+**How I verified no conflict remains:** Ran `python -m pytest tests\test_watchlist.py -v`; the watchlist test passed. Ran `python -m pytest tests/ -v`; all 5 tests passed. Ran `git log --merges --oneline origin/main..HEAD`; it returned no merge commits.
 
 ## PR Description
-<!-- Written at the end - feature overview, design decisions, manual testing steps -->
+This PR adds a watchlist feature so users can save films they want to watch later, separate from their watched collection. It adds a `WatchlistEntry` model, watchlist service logic, and `/watchlist/<user_id>` routes for adding and viewing saved films. The add flow now rejects nonexistent film IDs with `FilmNotFoundError` and rejects duplicate saves with a watchlist-specific conflict error.
+
+Design decisions:
+
+- New watchlist entries default to `public=True` because CineLog is a community film tracking app and the feature should support sharing and discovery by default. The privacy tradeoff is real, so the product should make this behavior clear and revisit the default if private watchlists become a stronger user expectation.
+- `get_watchlist()` keeps alphabetical ordering for now because the current API exposes one default order and a watchlist often functions as a saved reference list. Date-added ordering is a valid future option, especially if users treat watchlists more like queues.
+
+Manual testing steps:
+
+1. Run `python app.py`.
+2. Create or identify a user ID and film UUID in the local database.
+3. Send `POST /watchlist/<user_id>/add` with JSON body `{ "film_id": "<film_uuid>" }` and confirm a `201` response with `film_id`, `date_added`, and `public`.
+4. Send the same POST again and confirm a `409` duplicate response.
+5. Send the POST with `00000000-0000-0000-0000-000000000000` and confirm a `404` film-not-found response.
+6. Send `GET /watchlist/<user_id>` and confirm the saved film appears with watchlist metadata.
+
+## Git Log Screenshot
+
+![git log --oneline output](git-log-oneline.png)
