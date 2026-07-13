@@ -6,17 +6,17 @@ I used Codex for codebase orientation and verification planning. Before changing
 ## Comment 1 - Rename
 **What I did:** Renamed `save_to_watchlist()` to `add_to_watchlist()` in `services/watchlist_service.py` so the watchlist service matches the existing `add_to_collection()` verb-to-noun convention. Updated the import and call site in `routes/watchlist/watchlist.py`.
 
-**How I verified:** Ran `rg -n "save_to_watchlist|add_to_watchlist" -S` to confirm there were no remaining `save_to_watchlist` references and that the only call sites now use `add_to_watchlist`. Ran `python -m pytest tests/ -v`; all 4 existing tests passed.
+**How I verified:** Ran `rg -n "save_to_watchlist|add_to_watchlist" -S` to confirm there were no remaining `save_to_watchlist` references and that the only call sites now use `add_to_watchlist`. Ran `python -m pytest tests/ -v`; all 7 tests passed.
 
 ## Comment 2 - Deduplication
 **What I did:** Added `AlreadyInWatchlistError` and updated `add_to_watchlist()` to check `WatchlistEntry.query.filter_by(user_id=user_id, film_id=film_id).first()` before creating a new row. This mirrors the `add_to_collection()` duplicate-check pattern. I also updated the watchlist route to return a 409 response for duplicate watchlist adds, matching the collection route's conflict behavior.
 
-**How I verified:** Ran a small in-memory service check that added the same film twice, confirmed `AlreadyInWatchlistError` was raised, and confirmed only one `WatchlistEntry` existed. Ran `python -m pytest tests/ -v`; all 4 existing tests passed.
+**How I verified:** Added `test_add_to_watchlist_duplicate_raises`, which adds the same film twice, confirms `AlreadyInWatchlistError` is raised, and confirms only one `WatchlistEntry` exists. Ran `python -m pytest tests\test_watchlist.py -v`; all 3 watchlist tests passed. Ran `python -m pytest tests/ -v`; all 7 tests passed.
 
 ## Comment 3 - Missing test
-**What I did:** Added `tests/test_watchlist.py` with `test_add_to_watchlist_nonexistent_film_raises`, modeled after `test_add_to_collection_nonexistent_film_raises`. The new test uses the same in-memory app fixture, creates a sample user, passes a fake UUID film ID, and asserts that `add_to_watchlist()` raises `FilmNotFoundError`.
+**What I did:** Expanded `tests/test_watchlist.py` to match the service-test pattern in `tests/test_collection.py`. It now covers the happy path with `test_add_to_watchlist_creates_entry`, duplicate/conflict handling with `test_add_to_watchlist_duplicate_raises`, and nonexistent film IDs with `test_add_to_watchlist_nonexistent_film_raises`.
 
-**How I verified:** Ran `python -m pytest tests\test_watchlist.py -v`; the new watchlist test passed. Ran `python -m pytest tests/ -v`; all 5 tests passed.
+**How I verified:** Ran `python -m pytest tests\test_watchlist.py -v`; all 3 watchlist tests passed. Ran `python -m pytest tests/ -v`; all 7 tests passed.
 
 ## Comment 4 - Default visibility
 **My position:** I would keep `public=True` as the default for new watchlist entries.
@@ -37,7 +37,7 @@ I used Codex for codebase orientation and verification planning. Before changing
 
 **How I resolved it:** I resolved `.gitignore` by keeping the combined generated-file ignores, including `.pytest_cache/`, `.venv/`, and `venv/`. Then I restored `WatchlistEntry` in `models.py` with `film_id = db.Column(db.String(36), db.ForeignKey("film.id"), nullable=False)` so watchlist entries now reference UUID film IDs. I added `watchlist_entries` relationships for `User` and `Film`, kept `public=True`, and added a unique constraint on `(user_id, film_id)`. I also updated the watchlist service and route docstrings from integer film IDs to UUID film IDs.
 
-**How I verified no conflict remains:** Ran `python -m pytest tests\test_watchlist.py -v`; the watchlist test passed. Ran `python -m pytest tests/ -v`; all 5 tests passed. Ran `git log --merges --oneline origin/main..HEAD`; it returned no merge commits.
+**How I verified no conflict remains:** Ran `python -m pytest tests\test_watchlist.py -v`; all 3 watchlist tests passed. Ran `python -m pytest tests/ -v`; all 7 tests passed. Ran `git log --merges --oneline origin/main..HEAD`; it returned no merge commits.
 
 ## PR Description
 This PR adds a watchlist feature so users can save films they want to watch later, separate from their watched collection. It adds a `WatchlistEntry` model, watchlist service logic, and `/watchlist/<user_id>` routes for adding and viewing saved films. The add flow now rejects nonexistent film IDs with `FilmNotFoundError` and rejects duplicate saves with a watchlist-specific conflict error.
