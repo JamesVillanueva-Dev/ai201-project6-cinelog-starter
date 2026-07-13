@@ -1,60 +1,97 @@
 # PR Response Doc - CineLog Watchlist Feature
 
 ## AI Usage
-I used Codex for codebase orientation and verification planning. Before changing code, I had it summarize the responsibilities and patterns in `models.py`, `services/collection_service.py`, and `tests/test_collection.py`, then I verified those summaries directly against the files. I also used Codex to stress-test my Comment 4 and Comment 5 reasoning; the useful counterarguments were that private-by-default better protects user expectations and date-added order better reflects recent intent, so I acknowledged both tradeoffs explicitly. At the end, I used Codex to check the commit history against the conventional commit requirement.
+I used Codex as a second set of eyes while working through the review. I had it help me compare the watchlist code against the existing collection patterns, then I checked the actual files myself before making changes. I also used it to sanity-check the final test run and commit history.
 
 ## Comment 1 - Rename
-**What I did:** Renamed `save_to_watchlist()` to `add_to_watchlist()` in `services/watchlist_service.py` so the watchlist service matches the existing `add_to_collection()` verb-to-noun convention. Updated the import and call site in `routes/watchlist/watchlist.py`.
+**What I did:** Renamed `save_to_watchlist()` to `add_to_watchlist()` in `services/watchlist_service.py`. That matches the existing service naming style, like `add_to_collection()`.
 
-**How I verified:** Ran `rg -n "save_to_watchlist|add_to_watchlist" -S` to confirm there were no remaining `save_to_watchlist` references and that the only call sites now use `add_to_watchlist`. Ran `python -m pytest tests/ -v`; all 7 tests passed.
+**How I verified:** I searched for `save_to_watchlist` to make sure the old name was gone, then ran the test suite.
 
 ## Comment 2 - Deduplication
-**What I did:** Added `AlreadyInWatchlistError` and updated `add_to_watchlist()` to check `WatchlistEntry.query.filter_by(user_id=user_id, film_id=film_id).first()` before creating a new row. This mirrors the `add_to_collection()` duplicate-check pattern. I also updated the watchlist route to return a 409 response for duplicate watchlist adds, matching the collection route's conflict behavior.
+**What I did:** Added `AlreadyInWatchlistError` and checked for an existing `WatchlistEntry` before creating a new one. The route returns a `409` if the user tries to add the same film twice.
 
-**How I verified:** Added `test_add_to_watchlist_duplicate_raises`, which adds the same film twice, confirms `AlreadyInWatchlistError` is raised, and confirms only one `WatchlistEntry` exists. Ran `python -m pytest tests\test_watchlist.py -v`; all 3 watchlist tests passed. Ran `python -m pytest tests/ -v`; all 7 tests passed.
+**How I verified:** I added `test_add_to_watchlist_duplicate_raises`, which confirms the error is raised and only one row exists.
 
 ## Comment 3 - Missing test
-**What I did:** Expanded `tests/test_watchlist.py` to match the service-test pattern in `tests/test_collection.py`. It now covers the happy path with `test_add_to_watchlist_creates_entry`, duplicate/conflict handling with `test_add_to_watchlist_duplicate_raises`, and nonexistent film IDs with `test_add_to_watchlist_nonexistent_film_raises`.
+**What I did:** Expanded `tests/test_watchlist.py` so the watchlist service has the same basic coverage as the collection service:
 
-**How I verified:** Ran `python -m pytest tests\test_watchlist.py -v`; all 3 watchlist tests passed. Ran `python -m pytest tests/ -v`; all 7 tests passed.
+- `test_add_to_watchlist_creates_entry`
+- `test_add_to_watchlist_duplicate_raises`
+- `test_add_to_watchlist_nonexistent_film_raises`
+
+**How I verified:** Ran `python -m pytest tests/ -v`; all tests passed.
 
 ## Comment 4 - Default visibility
-**My position:** I would keep `public=True` as the default for new watchlist entries.
+**My position:** I kept `public=True` as the default.
 
-**Reasoning:** CineLog is framed as a community film tracking app, so the default should support sharing and discovery unless a user chooses otherwise. A public watchlist makes it easier for friends or other community members to see what someone is interested in watching next, which fits the social value of the feature. It also keeps the watchlist consistent with an additive, low-friction save flow: users can quickly save films without making a visibility decision every time.
+**Reasoning:** CineLog is a community film app, so public watchlists fit the product better for this first version. It makes it easy for people to share what they want to watch next.
 
-**Tradeoff acknowledged:** The tradeoff is privacy. Some users may treat a watchlist as personal intent rather than a recommendation list, and a private-by-default model would better protect those expectations. If CineLog later adds per-entry controls in the UI, onboarding, or account-level privacy settings, the default should be revisited. For this version, I think public-by-default is reasonable because it matches the app's community orientation, but the product should make the public behavior clear to users.
+**Tradeoff:** Privacy is the main downside. Some users may expect a watchlist to be private, so the UI should make this default clear. If privacy settings become more important later, I would revisit the default.
 
 ## Comment 5 - Sort order
-**My position:** I would keep alphabetical ordering for `get_watchlist()` in this version.
+**My position:** I kept watchlists sorted alphabetically.
 
-**Reasoning:** A watchlist is more like a saved reference list than a viewing history. Users may add films over weeks or months and then come back looking for a specific title; alphabetical order gives them a stable, predictable way to scan the list even before the app has search, filters, or UI controls for sorting. It also avoids making older saved films disappear below newer saves just because the user recently browsed and added several titles.
+**Reasoning:** A watchlist feels more like a saved reference list than a history feed. Alphabetical order makes it easier to scan for a title, especially since there is no search or sort option yet.
 
-**Engagement with reviewer's point:** The reviewer's date-added suggestion is valid because recency captures intent: the most recently saved films may be the ones a user is most excited to watch next. I would choose alphabetical for now because the current API exposes one default order and no separate "recently added" view. If usage shows that users treat the watchlist as a queue rather than a lookup list, I would change this to `date_added.desc()` or add an explicit `sort=` query parameter so both behaviors are available.
+**Tradeoff:** Sorting by newest first would also make sense if users treat the watchlist like a queue. If that becomes the expected behavior, I would either switch to `date_added.desc()` or add a `sort=` query parameter.
 
 ## Comment 6 - Rebase
-**What conflicted:** I ran `git fetch origin` and `git rebase origin/main`. The rebase stopped on an add/add conflict in `.gitignore` because both the branch and `main` had ignore-file changes. The main review conflict was the film ID refactor: the original watchlist branch was written around integer `film_id` values, while `main` had migrated `Film.id` and `CollectionEntry.film_id` to UUID strings.
+**What conflicted:** Rebasing onto `origin/main` hit an `.gitignore` conflict, and the larger code issue was that `main` had changed film IDs from integers to UUID strings.
 
-**How I resolved it:** I resolved `.gitignore` by keeping the combined generated-file ignores, including `.pytest_cache/`, `.venv/`, and `venv/`. Then I restored `WatchlistEntry` in `models.py` with `film_id = db.Column(db.String(36), db.ForeignKey("film.id"), nullable=False)` so watchlist entries now reference UUID film IDs. I added `watchlist_entries` relationships for `User` and `Film`, kept `public=True`, and added a unique constraint on `(user_id, film_id)`. I also updated the watchlist service and route docstrings from integer film IDs to UUID film IDs.
+**How I resolved it:** I kept the combined ignore rules and updated the watchlist model/service/route docs to use UUID film IDs. I also kept the watchlist relationships on `User` and `Film`, plus the unique constraint on `(user_id, film_id)`.
 
-**How I verified no conflict remains:** Ran `python -m pytest tests\test_watchlist.py -v`; all 3 watchlist tests passed. Ran `python -m pytest tests/ -v`; all 7 tests passed. Ran `git log --merges --oneline origin/main..HEAD`; it returned no merge commits.
+**How I verified:** I ran the full test suite and checked that there were no merge commits with `git log --merges --oneline origin/main..HEAD`.
+
+## Bonus - remove_from_watchlist()
+**What I added:** Added `remove_from_watchlist(user_id, film_id)` in `services/watchlist_service.py` and exposed it through `DELETE /watchlist/<user_id>/remove`.
+
+**Missing film behavior:** If the film is not currently on the user's watchlist, the service raises `NotInWatchlistError`. The route catches that and returns a `404`, which matches the way `remove_from_collection()` handles `NotInCollectionError`.
+
+**Pattern followed:** The function follows the same lookup/delete/commit pattern as `remove_from_collection()`, and the endpoint uses the same request body shape: `{ "film_id": "<uuid>" }`.
+
+**Test written:** I added tests for successful removal and for trying to remove a film that is not on the watchlist.
+
+## Bonus - Second Test
+**Extra edge case:** I chose `test_remove_from_watchlist_missing_entry_raises`.
+
+**Why I chose it:** This is the case most likely to cause confusing behavior if it is missed. Without a clear error, a failed delete could look like it worked even though the film was never saved. The test makes sure the service raises `NotInWatchlistError` instead.
+
+## Bonus - Visibility Toggle Endpoint
+**What I added:** Added `PATCH /watchlist/<user_id>/visibility`.
+
+**How `public` works:** New watchlist entries still default to `public=True`. A caller can update that value by sending:
+
+```json
+{
+  "film_id": "<film_uuid>",
+  "public": false
+}
+```
+
+The endpoint returns the updated `WatchlistEntry`. If `public` is missing or is not a boolean, the route returns `400`. If the film is not on the user's watchlist, it returns `404`.
+
+**Test written:** I added tests for updating an entry to private, for the endpoint returning the updated value, and for rejecting a non-boolean `public` value.
 
 ## PR Description
-This PR adds a watchlist feature so users can save films they want to watch later, separate from their watched collection. It adds a `WatchlistEntry` model, watchlist service logic, and `/watchlist/<user_id>` routes for adding and viewing saved films. The add flow now rejects nonexistent film IDs with `FilmNotFoundError` and rejects duplicate saves with a watchlist-specific conflict error.
+This PR adds a watchlist feature so users can save films they want to watch later. It supports adding, viewing, removing, and changing the public/private visibility of saved films. Duplicate adds and missing films return clear errors instead of falling through to database errors.
 
 Design decisions:
 
-- New watchlist entries default to `public=True` because CineLog is a community film tracking app and the feature should support sharing and discovery by default. The privacy tradeoff is real, so the product should make this behavior clear and revisit the default if private watchlists become a stronger user expectation.
-- `get_watchlist()` keeps alphabetical ordering for now because the current API exposes one default order and a watchlist often functions as a saved reference list. Date-added ordering is a valid future option, especially if users treat watchlists more like queues.
+- Watchlist entries default to `public=True` because CineLog is community-focused.
+- Watchlists are sorted alphabetically for now because that makes the saved list easier to scan.
+- Visibility changes require an explicit boolean `public` value so callers do not accidentally make an entry public or private.
 
 Manual testing steps:
 
 1. Run `python app.py`.
-2. Create or identify a user ID and film UUID in the local database.
-3. Send `POST /watchlist/<user_id>/add` with JSON body `{ "film_id": "<film_uuid>" }` and confirm a `201` response with `film_id`, `date_added`, and `public`.
-4. Send the same POST again and confirm a `409` duplicate response.
-5. Send the POST with `00000000-0000-0000-0000-000000000000` and confirm a `404` film-not-found response.
-6. Send `GET /watchlist/<user_id>` and confirm the saved film appears with watchlist metadata.
+2. Create or find a user ID and film UUID in the local database.
+3. Send `POST /watchlist/<user_id>/add` with `{ "film_id": "<film_uuid>" }` and confirm a `201`.
+4. Send the same POST again and confirm a `409`.
+5. Send `GET /watchlist/<user_id>` and confirm the film appears.
+6. Send `PATCH /watchlist/<user_id>/visibility` with `{ "film_id": "<film_uuid>", "public": false }` and confirm the response has `"public": false`.
+7. Send `DELETE /watchlist/<user_id>/remove` with `{ "film_id": "<film_uuid>" }` and confirm a `200`.
+8. Send the same DELETE again and confirm a `404`.
 
 ## Git Log Screenshot
 
