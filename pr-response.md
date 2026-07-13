@@ -1,7 +1,7 @@
 # PR Response Doc - CineLog Watchlist Feature
 
 ## AI Usage
-I used Codex as a second set of eyes while working through the review. I had it help me compare the watchlist code against the existing collection patterns, then I checked the actual files myself before making changes. I also used it to sanity-check the final test run and commit history.
+I used Codex as a second set of eyes while working through the review. I had it help me compare the watchlist code against the existing collection patterns, then I checked the actual files myself before making changes. For Comments 4 and 5, I asked it to point out tradeoffs for public-by-default watchlists and alphabetical sorting; I kept my final answer shorter and focused it on CineLog's community use case and the current lack of search/sort controls. I also used it to sanity-check the final test run and commit history.
 
 ## Comment 1 - Rename
 **What I did:** Renamed `save_to_watchlist()` to `add_to_watchlist()` in `services/watchlist_service.py`. That matches the existing service naming style, like `add_to_collection()`.
