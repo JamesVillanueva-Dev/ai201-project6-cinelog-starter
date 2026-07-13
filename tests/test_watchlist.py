@@ -6,7 +6,12 @@ import pytest
 from app import create_app, db
 from models import User, Film, WatchlistEntry
 from services.collection_service import FilmNotFoundError
-from services.watchlist_service import add_to_watchlist, AlreadyInWatchlistError
+from services.watchlist_service import (
+    add_to_watchlist,
+    remove_from_watchlist,
+    AlreadyInWatchlistError,
+    NotInWatchlistError,
+)
 
 
 @pytest.fixture
@@ -88,3 +93,28 @@ def test_add_to_watchlist_nonexistent_film_raises(app, sample_user):
 
         with pytest.raises(FilmNotFoundError):
             add_to_watchlist(user_id=sample_user, film_id=fake_film_id)
+
+
+def test_remove_from_watchlist_deletes_entry(app, sample_user, sample_film):
+    """
+    Removing a saved film should delete its WatchlistEntry.
+    """
+    with app.app_context():
+        add_to_watchlist(user_id=sample_user, film_id=sample_film)
+
+        removed = remove_from_watchlist(user_id=sample_user, film_id=sample_film)
+
+        assert removed is True
+        entry = WatchlistEntry.query.filter_by(
+            user_id=sample_user, film_id=sample_film
+        ).first()
+        assert entry is None
+
+
+def test_remove_from_watchlist_missing_entry_raises(app, sample_user, sample_film):
+    """
+    Removing a film that is not saved should raise NotInWatchlistError.
+    """
+    with app.app_context():
+        with pytest.raises(NotInWatchlistError):
+            remove_from_watchlist(user_id=sample_user, film_id=sample_film)
