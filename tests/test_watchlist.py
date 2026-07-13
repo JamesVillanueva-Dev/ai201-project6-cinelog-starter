@@ -9,6 +9,7 @@ from services.collection_service import FilmNotFoundError
 from services.watchlist_service import (
     add_to_watchlist,
     remove_from_watchlist,
+    update_watchlist_visibility,
     AlreadyInWatchlistError,
     NotInWatchlistError,
 )
@@ -118,3 +119,59 @@ def test_remove_from_watchlist_missing_entry_raises(app, sample_user, sample_fil
     with app.app_context():
         with pytest.raises(NotInWatchlistError):
             remove_from_watchlist(user_id=sample_user, film_id=sample_film)
+
+
+def test_update_watchlist_visibility_makes_entry_private(
+    app, sample_user, sample_film
+):
+    """
+    Updating visibility should persist the requested public value.
+    """
+    with app.app_context():
+        add_to_watchlist(user_id=sample_user, film_id=sample_film)
+
+        entry = update_watchlist_visibility(
+            user_id=sample_user,
+            film_id=sample_film,
+            public=False,
+        )
+
+        assert entry.public is False
+        in_db = WatchlistEntry.query.filter_by(
+            user_id=sample_user, film_id=sample_film
+        ).first()
+        assert in_db.public is False
+
+
+def test_update_visibility_endpoint_rejects_non_boolean_public(
+    app, sample_user, sample_film
+):
+    """
+    The visibility endpoint should only accept true or false for public.
+    """
+    with app.app_context():
+        add_to_watchlist(user_id=sample_user, film_id=sample_film)
+
+    response = app.test_client().patch(
+        f"/watchlist/{sample_user}/visibility",
+        json={"film_id": sample_film, "public": "false"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "public must be a boolean"
+
+
+def test_update_visibility_endpoint_updates_public(app, sample_user, sample_film):
+    """
+    The visibility endpoint should return the updated WatchlistEntry.
+    """
+    with app.app_context():
+        add_to_watchlist(user_id=sample_user, film_id=sample_film)
+
+    response = app.test_client().patch(
+        f"/watchlist/{sample_user}/visibility",
+        json={"film_id": sample_film, "public": False},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["public"] is False
